@@ -6,9 +6,9 @@ library(rsample)
 library(tensorflow)
 
 
-datasetLUSCLit <- read_csv("C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/LUSCGenes.csv")
-datasetLUSC <- read_csv("C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/GENESLUSCSELEC.csv")
-validacao<-read_csv("C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/validacaoLUSC.csv")
+datasetLUSCLit <- read_csv("../data/LUSCGenes.csv")
+datasetLUSC <- read_csv("../data/GENESLUSCSELEC.csv")
+validacao<-read_csv("../data/validacaoLUSC.csv")
 
 datasetLUSCLit <- subset(datasetLUSCLit, select= c(TP53,NF1,ARID1A,RB1,CDKN2A,PIK3CA,NFE2L2,PTEN,KMT2D,FAT1,NOTCH1,KDM6A,HRAS,vital_status) )
 datasetLUSC32 <- subset(datasetLUSC, select= c(PKHD1,CNTNAP5,HCN1,ERICH3,RELN,DNAH8,PKHD1L1,DNAH5,KMT2D,FAM135B,SYNE1,SI,CDH10,PAPPA2,DAMTS12,RYR3,MUC17,PCDH15,PCLO,COL11A1,NAV3,SPTA1,FLG,XIRP2,ZFHX4,USH2A,LRP1B,RYR2,CSMD3,MUC16,TP53,TTN,vital_status) )
@@ -20,16 +20,16 @@ validacaoLUSC15<- subset(validacao, select= c(TP53,MUC16,LRP1B,MUC17,CDH10,FAM13
 # first we split between training and testing sets
 split <- initial_split(datasetLUSCLit, prop = 4/5)
 train <- training(split)
-write_csv(train, file = "luad_train.csv")
+write_csv(train, file = "lusc_train.csv")
 test <- testing(split)
-write_csv(test, file = "luad_test.csv")
+write_csv(test, file = "lusc_test.csv")
 
 
-TRAIN_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_train.csv"
-TEST_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_test.csv"
+TRAIN_DATA_URL<- "../data/lusc_train.csv"
+TEST_DATA_URL<- "../data/lusc_test.csv"
 
-train_file_path <- get_file("luad_train.csv",TRAIN_DATA_URL )
-test_file_path <- get_file("luad_test.csv",TEST_DATA_URL )
+train_file_path <- get_file("lusc_train.csv",TRAIN_DATA_URL )
+test_file_path <- get_file("lusc_test.csv",TEST_DATA_URL )
 
 
 train_dataset <- make_csv_dataset(
