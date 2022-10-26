@@ -43,6 +43,6 @@ oncoplot(maf = lusc.maf, top = 35)
 OncogenicPathways(maf = lusc.maf)
 
 # Figure 6
-dgi = drugInteractions(maf = luad.maf, fontSize = 0.75)
+dgi = drugInteractions(maf = lusc.maf, fontSize = 0.75)
 
 
