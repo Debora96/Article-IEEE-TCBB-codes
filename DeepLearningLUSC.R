@@ -124,16 +124,16 @@ print(cfm)
 # first we split between training and testing sets
 split <- initial_split(datasetLUSC32, prop = 4/5)
 train <- training(split)
-write_csv(train, file = "luad_train.csv")
+write_csv(train, file = "lusc_train.csv")
 test <- testing(split)
-write_csv(test, file = "luad_test.csv")
+write_csv(test, file = "lusc_test.csv")
 
 
-TRAIN_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_train.csv"
-TEST_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_test.csv"
+TRAIN_DATA_URL<- "../data/lusc_train.csv"
+TEST_DATA_URL<- "../data/lusc_test.csv"
 
-train_file_path <- get_file("luad_train.csv",TRAIN_DATA_URL )
-test_file_path <- get_file("luad_test.csv",TEST_DATA_URL )
+train_file_path <- get_file("lusc_train.csv",TRAIN_DATA_URL )
+test_file_path <- get_file("lusc_test.csv",TEST_DATA_URL )
 
 
 train_dataset <- make_csv_dataset(
@@ -225,14 +225,14 @@ print(cfm)
 
 #datasetLUSC32 with Validation LUSC-KR
 # first we split between training and testing sets
-write_csv(datasetLUSC32, file = "luad_train.csv")
-write_csv(validacaoLUSC32, file = "luad_test.csv")
+write_csv(datasetLUSC32, file = "lusc_train.csv")
+write_csv(validacaoLUSC32, file = "lusc_test.csv")
 
-TRAIN_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_train.csv"
-TEST_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_test.csv"
+TRAIN_DATA_URL<- "../data/lusc_train.csv"
+TEST_DATA_URL<- "../data/lusc_test.csv"
 
-train_file_path <- get_file("luad_train.csv",TRAIN_DATA_URL )
-test_file_path <- get_file("luad_test.csv",TEST_DATA_URL )
+train_file_path <- get_file("lusc_train.csv",TRAIN_DATA_URL )
+test_file_path <- get_file("lusc_test.csv",TEST_DATA_URL )
 
 
 train_dataset <- make_csv_dataset(
@@ -326,16 +326,16 @@ print(cfm)
 # first we split between training and testing sets
 split <- initial_split(datasetLUSC15, prop = 4/5)
 train <- training(split)
-write_csv(train, file = "luad_train.csv")
+write_csv(train, file = "lusc_train.csv")
 test <- testing(split)
-write_csv(test, file = "luad_test.csv")
+write_csv(test, file = "lusc_test.csv")
 
 
-TRAIN_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_train.csv"
-TEST_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_test.csv"
+TRAIN_DATA_URL<- "../data/lusc_train.csv"
+TEST_DATA_URL<- "../data/lusc_test.csv"
 
-train_file_path <- get_file("luad_train.csv",TRAIN_DATA_URL )
-test_file_path <- get_file("luad_test.csv",TEST_DATA_URL )
+train_file_path <- get_file("lusc_train.csv",TRAIN_DATA_URL )
+test_file_path <- get_file("lusc_test.csv",TEST_DATA_URL )
 
 
 train_dataset <- make_csv_dataset(
@@ -426,14 +426,14 @@ print(cfm)
 
 #datasetLUSC15 with Validation LUSC-KR
 # first we split between training and testing sets
-write_csv(datasetLUSC15, file = "luad_train.csv")
-write_csv(validacaoLUSC15, file = "luad_test.csv")
+write_csv(datasetLUSC15, file = "lusc_train.csv")
+write_csv(validacaoLUSC15, file = "lusc_test.csv")
 
-TRAIN_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_train.csv"
-TEST_DATA_URL<- "C:/Users/debor/Documents/UFRN/Dissertacao/LUAD/luad_test.csv"
+TRAIN_DATA_URL<- "../data/lusc_train.csv"
+TEST_DATA_URL<- "../data/lusc_test.csv"
 
-train_file_path <- get_file("luad_train.csv",TRAIN_DATA_URL )
-test_file_path <- get_file("luad_test.csv",TEST_DATA_URL )
+train_file_path <- get_file("lusc_train.csv",TRAIN_DATA_URL )
+test_file_path <- get_file("lusc_test.csv",TEST_DATA_URL )
 
 
 train_dataset <- make_csv_dataset(
