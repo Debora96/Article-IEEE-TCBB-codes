@@ -121,7 +121,9 @@ p2$datagenes$variable <- factor(p2$datagenes$variable,
 #p2 <- p2 +
 #  scale_fill_manual(values=rev(cols1))
 
-pdf("fig7.pdf", width = 16, height = 9)
+#Figure 5
+
+pdf("fig5.pdf", width = 16, height = 9)
   cowplot::plot_grid(p1, p2, labels = "auto", nrow=1, rel_widths = c(0.7,1))
 dev.off()
 
