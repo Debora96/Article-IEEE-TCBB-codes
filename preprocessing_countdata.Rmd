@@ -1,0 +1,180 @@
+---
+  title: "R Notebook Preprocessing and Download of Count Data"
+output: html_notebook
+---
+  
+  # Installing and Loading Libraries            
+  
+{r message=FALSE, warning=FALSE, paged.print=FALSE}
+packages_bioconductor = c("TCGAbiolinks", "SummarizedExperiment", "DESeq2", "Glimma", "limma","biomaRt", "genefilter")
+#use this function to check if each package is on the local machine
+#if a package is installed, it will be loaded
+#if any are not, the missing package(s) will be installed from Bioconductor and loaded
+package.check <- lapply(packages_bioconductor, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    BiocManager::install(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+}) 
+packages_cran = c("DT", "tidyverse","dplyr", "tibble", "stringr", "data.table", "genefilter", "ggrepel")
+
+#use this function to check if each package is on the local machine
+#if a package is installed, it will be loaded
+#if any are not, the missing package(s) will be installed from CRAN and loaded
+package.check <- lapply(packages_cran, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+rm(packages_cran, packages_bioconductor, package.check)
+
+
+# Downloading TCGA-LUSC clinical data from Xenabrowser
+
+
+```{r}
+# Survival data
+# https://xenabrowser.net/datapages/?dataset=TCGA-lusc.surviival.tsv&host=https%3A%2F%2Fgdc.xenahubs.net&removeHub=https%3A%2F%2Fxena.treehouse.gi.ucsc.edu%3A443
+
+#url <- "https://gdc-hub.s3.us-east-1.amazonaws.com/download/TCGA-LUSC.survival.tsv"
+#destfile <- "../data/lusc_survival.tsv.gz"
+#download.file(url, destfile)
+lusc.survi <- read_tsv(gzfile("../data/lusc_survival.tsv"))
+lusc.survi <- lusc.survi %>% 
+  mutate(sample = str_replace_all(sample, "-", ".")) %>% 
+  column_to_rownames("sample") %>% 
+  rename(status = OS, obs.time = OS.time, patient_id = '_PATIENT')
+
+lusc.survi <- as.data.frame(lusc.survi)
+# Transform days to months? / 30.43945
+# Clinical data
+# https://xenabrowser.net/datapages/?dataset=TCGA-lusc.GDC_phenotype.tsv&host=https%3A%2F%2Fgdc.xenahubs.net&removeHub=https%3A%2F%2Fxena.treehouse.gi.ucsc.edu%3A443
+#url <- "https://gdc-hub.s3.us-east-1.amazonaws.com/download/TCGA-LUSC.GDC_phenotype.tsv.gz"
+#destfile <- "../data/lusc_clinical.tsv.gz"
+#download.file(url, destfile)
+lusc.clini <- read_tsv(gzfile("../data/lusc_clinica.tsv.gz"))
+lusc.clini <- lusc.clini %>%
+  dplyr::select(c("submitter_id.samples","prior_malignancy.diagnoses","age_at_initial_pathologic_diagnosis", "gender.demographic",
+                  "sample_type_id.samples", "pathologic_M", "pathologic_N", "pathologic_T")) %>% 
+  rename(sample = 'submitter_id.samples', 
+         prior.dx = 'prior_malignancy.diagnoses', 
+         age = 'age_at_initial_pathologic_diagnosis', 
+         gender = 'gender.demographic',
+         sample.type = 'sample_type_id.samples',
+         metastasis = 'pathologic_M',
+         neoplasm = 'pathologic_N',
+         ajcc.stage = 'pathologic_T') %>% 
+  mutate(sample.type = str_replace_all(sample.type, "01", "TP") ) %>% 
+  mutate(sample.type = str_replace_all(sample.type, "11", "NT") ) %>% 
+  filter(sample.type %in% c("TP", "NT")) %>%  
+  mutate(sample = str_replace_all(sample, "-", ".")) %>% 
+  filter(sample %in% row.names(lusc.survi)) %>% 
+  column_to_rownames("sample") %>% 
+  mutate_if(is.character,as.factor)
+
+lusc.clini <- cbind(lusc.clini, lusc.survi[rownames(lusc.clini),])
+lusc.clini$codes <- rownames(lusc.clini)
+rm(lusc.survi)
+```
+
+
+# Downloading TCGA-lusc counts from Xenabrowser
+
+```{r}
+# https://xenabrowser.net/datapages/?dataset=TCGA-lusc.htseq_counts.tsv&host=https%3A%2F%2Fgdc.xenahubs.net&removeHub=https%3A%2F%2Fxena.treehouse.gi.ucsc.edu%3A443
+#url <- "https://gdc-hub.s3.us-east-1.amazonaws.com/download/TCGA-LUSC.htseq_counts.tsv.gz"
+#destfile <- "../data/lusc_counts.tsv.gz"
+#download.file(url, destfile)
+lusc.count <- read_tsv(gzfile("../data/lusc_counts.tsv.gz"))
+lusc.count <- as.data.frame(lusc.count)
+colnames(lusc.count) <- gsub("-", "\\.", colnames(lusc.count))
+row.names(lusc.count) <- sub("\\..*", "", lusc.count$Ensembl_ID)
+lusc.count$Ensembl_ID <- NULL
+lusc.count <- 2^(lusc.count)-1
+lusc.count <- round(lusc.count, digits = 0)
+rm(url, destfile)
+```
+
+# Select anotation dataset
+
+```{r}
+# If you haven't already installed devtools...
+#install.packages("devtools")
+# Use devtools to install the package
+#devtools::install_github("stephenturner/annotables")
+library(annotables)
+lusc.annot <- grch38 %>%
+  dplyr::filter(grch38$ensgene %in%  row.names(lusc.count)) %>%
+  dplyr::select(ensgene, symbol, description)
+```
+
+
+# Filtering Counts and Clinical data
+
+```{r}
+lusc.annot <- lusc.annot[!duplicated(lusc.annot$symbol), ]
+lusc.annot.miRNA <-  lusc.annot %>% 
+  dplyr::filter(grepl("^microRNA", description))
+lusc.annot.miRNA <-  lusc.annot %>% 
+  dplyr::filter(grepl("^MIR", symbol))
+lusc.count.miRNA <- lusc.count[lusc.annot.miRNA$ensgene,]
+rownames(lusc.count.miRNA) <- lusc.annot.miRNA$symbol
+lusc.count <- lusc.count[lusc.annot$ensgene,]
+rownames(lusc.count) <- lusc.annot$symbol
+lusc.clini <- lusc.clini[rownames(lusc.clini) %in% colnames(lusc.count), ]
+lusc.clini <- lusc.clini[!is.na(lusc.clini$sample.type),]
+lusc.count <- lusc.count[,colnames(lusc.count) %in% rownames(lusc.clini)]
+```
+
+
+```{r}
+save(lusc.count, lusc.clini, lusc.annot, file="../data/lusc_count.RData", compress=T)
+```
+
+# Conditions files of Sample Type for R-Peridot
+
+```{r}
+codes.type <- lusc.clini %>% 
+  filter(sample.type %in% c("TP", "NT")) %>%   
+  rownames_to_column("samples") %>%
+  dplyr::select(samples)  %>%
+  as_vector(.)
+write.table(lusc.count[,codes.type], "../data/lusc_type.tsv", quote = F, sep = "\t")
+## Conditions file
+cond <- lusc.clini %>% 
+  filter(sample.type %in% c("TP", "NT")) %>%   
+  rownames_to_column("samples") %>%
+  dplyr::select("samples", "sample.type")
+row.names(cond) <- NULL
+cond$sample.type <- as.factor(ifelse(cond$sample.type == "NT", "condition0","condition1"))
+colnames(cond) <- c("samples", "condition")
+write.table(cond, "../data/lusc_type.tsv.conditions", quote = F, sep = "\t", row.names = F)
+rm(codes.type, cond)
+```
+
+
+# Conditions files of Metastasis for R-Peridot
+
+
+```{r}
+# Selecting only samples with M0 or M1 of Primary Tumors cases:
+codes.metas <- lusc.clini %>% 
+  filter(sample.type == "TP") %>%  
+  filter(metastasis %in% c("M0", "M1")) %>%    
+  rownames_to_column("samples") %>%
+  dplyr::select(samples)  %>%
+  as_vector(.)
+write.table(lusc.count[,codes.metas], "../data/lusc_metas.tsv", quote = F, sep = "\t")
+## Conditions file
+cond <- lusc.clini %>% 
+  filter(sample.type == "TP") %>%  
+  filter(metastasis %in% c("M0", "M1")) %>% 
+  rownames_to_column("samples") %>%
+  dplyr::select("samples", "metastasis")
+row.names(cond) <- NULL
+cond$metastasis <- as.factor(ifelse(cond$metastasis == "M0", "condition0","condition1"))
+colnames(cond) <- c("samples", "condition")
+write.table(cond, "../data/lusc_metas.tsv.conditions", quote = F, sep = "\t", row.names = F)
+rm(codes.metas, cond)
+```
