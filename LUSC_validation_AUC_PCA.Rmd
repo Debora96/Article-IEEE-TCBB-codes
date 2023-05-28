@@ -1,0 +1,419 @@
+---
+  title: "LUSC Validation "
+output: html_notebook
+---
+  
+  
+```{r}
+packages_cran = c("tidyverse")
+
+#use this function to check if each package is on the local machine
+#if a package is installed, it will be loaded
+#if any are not, the missing package(s) will be installed from CRAN and loaded
+package.check <- lapply(packages_cran, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+library(stats) # MDS
+library("glmpca")
+library(ggplot2)
+library(ggfortify)
+library(survC1)
+library(survAUC)
+library(glmnet)
+library(gbm)
+library(mboost)
+library(finalfit)
+rm(packages_cran, package.check)
+```
+
+
+# Load Processed data
+
+```{r}
+load("../data/1.data.processed.rda")
+
+library(dplyr)
+
+#remove rows with NA value in any column
+   lusc.data<-lusc.data %>%
+     na.omit()
+  data<-lusc.data
+library(finalfit)
+# Crosstable 
+explanatory = c("obs.time", "age", "gender", "neoplasm", "metastasis", "ajcc.stage")
+dependent = 'status'
+data %>%
+#  mutate(status = case_when(status==1 ~ "Deceased",
+#                            status==0 ~ "Alive")) %>%
+#  mutate(gender = case_when(gender==1 ~ "Male",
+#                            gender==0 ~ "Female")) %>%
+  summary_factorlist(dependent, explanatory, 
+                     p=TRUE, add_dependent_label=TRUE) -> t1
+knitr::kable(t1, align=c("l", "l", "r", "r", "r"))
+```
+
+# Train 66% of TCGA, test holdout 33% of TCGA
+
+
+
+```{r}
+library(survC1)
+library(survAUC)
+
+for(sign in gsign.lusc$id[c(1:8)]) {
+  print(sign)
+  col_sign <- intersect(gsign_lusc[sign, "signature"][[1]], names(data))
+  
+  #set.seed(1) ## for reproducibility
+  
+  fold1 <- sample(1:nrow(data),size=floor(nrow(data)/3))
+  fold2 <- sample(setdiff(1:nrow(data), fold1), size=floor(nrow(data)/3))
+  fold3 <- setdiff(1:nrow(data), union(fold1,fold2))
+  
+  x <- (data[, col_sign] +1)
+  y <- Surv(data$obs.time, data$status)
+  y_tr <- y[-fold1]
+  x_tr <- x[-fold1,]
+  y_te <- y[fold1]
+  x_te <- x[fold1,]
+  
+  cvfit_tr <- cv.glmnet(data.matrix(x_tr),y_tr,family="cox")
+  
+  preds <- predict(cvfit_tr,data.matrix(x_te),s="lambda.min")
+  
+  levs <- cut_number(preds,3)
+  
+  fit <- survfit(y_te~levs)
+  out <- survdiff(y_te~levs)
+  p.val <- 1 - pchisq(out$chisq, length(out$n) - 1)
+  print(paste0("p-val: ", p.val))
+  
+  
+  mydata <- data.frame(as.matrix(y_te),preds)
+  out <- Est.Cval(mydata, 3000, nofit=TRUE)
+  cind <- out$Dhat
+  print(paste0("C-index: ", cind))
+  
+  times <- seq(10, 3000, 10)                  
+  AUC_Uno <- AUC.uno(y_tr, y_te, preds, times)
+  print(paste0("AUC_Uno: ", AUC_Uno$iauc)) 
+  
+  print("---")
+  
+  if(p.val< 0.05){
+    try({
+      pdf(file=paste0("../plots/surv/TCGA-", sign,".pdf"), width = 14, height = 10)
+      
+      print(autoplot(fit,xlab="Survival Time (days)",ylab="Survival",
+                     main=paste0(sign , " / p-value: ", round(p.val,6), " / C-index: ", round(cind,3), " / AUC: ", round(AUC_Uno$iauc,3))))
+      
+      dev.off()
+    }, silent = T)
+  }
+}  
+
+```
+
+# Train 66% of TCGA, test holdout 33% of TCGA - 100 repeats
+
+```{r}
+library(survC1)
+library(survAUC)
+bmk <- setNames(data.frame(matrix(nrow=0, ncol=6)), c("sign", "iteration", "fold", "p.val", "cind", "auc_uno"))
+for(sign in gsign_lusc$id[c(1:8)]) {
+  #print(sign)
+  col_sign <- intersect(gsign_lusc[sign, "signature"][[1]], names(data))
+  
+  for(i in c(1:10)){
+    #set.seed(1) ## for reproducibility
+    fold1 <- sample(1:nrow(data),size=floor(nrow(data)/3))
+    fold2 <- sample(setdiff(1:nrow(data), fold1), size=floor(nrow(data)/3))
+    fold3 <- setdiff(1:nrow(data), union(fold1,fold2))
+    
+    folds <- list(fold1, fold2, fold3)
+    f <- 1
+    for(fd in folds){
+      x <- (data[, col_sign] +1)
+      y <- Surv(data$obs.time, data$status)
+      y_tr <- y[-fd]
+      x_tr <- x[-fd,]
+      y_te <- y[fd]
+      x_te <- x[fd,]
+      
+      cvfit_tr <- cv.glmnet(data.matrix(x_tr),y_tr,family="cox")
+      
+      preds <- predict(cvfit_tr,data.matrix(x_te),s="lambda.min")
+      
+      levs <- cut_number(preds,3)
+      
+      fit <- survfit(y_te~levs)
+      out <- survdiff(y_te~levs)
+      p.val <- 1 - pchisq(out$chisq, length(out$n) - 1)
+      #print(paste0("p-val: ", p.val))
+      
+      
+      mydata <- data.frame(as.matrix(y_te),preds)
+      out <- Est.Cval(mydata, 3000, nofit=TRUE)
+      cind <- out$Dhat
+      #print(paste0("C-index: ", cind))
+      
+      times <- seq(10, 3000, 10)                  
+      AUC_Uno <- AUC.uno(y_tr, y_te, preds, times)
+      auc_uno <- AUC_Uno$iauc
+      #print(paste0("AUC_Uno: ", auc_uno)) 
+      df <- setNames(data.frame(sign, i, f, p.val, cind, auc_uno), c("sign", "iteration", "fold", "p.val", "cind", "auc_uno"))
+      
+      bmk <- rbind(bmk,  df)
+      f <- f+1
+    }
+  }
+} 
+bmk %>% group_by(sign) %>% 
+  summarise(auc=mean(auc_uno)) %>% 
+  arrange(desc( auc)) %>% 
+  knitr::kable(.)
+bmk %>% group_by(sign) %>%
+  summarise(p=mean(p.val)) %>% 
+  arrange( p) %>% 
+  knitr::kable(.)
+```
+
+
+# PCA - TCGA
+
+```{r}
+set.seed(1)
+xi <- sample(1:nrow(data),size=floor(nrow(data)/2))
+x <- (data[, col_sign] +1)
+y <- Surv(data$obs.time, data$status)
+y_tr <- y[-xi]
+x_tr <- x[-xi,]
+y_te <- y[xi]
+x_te <- x[xi,]
+cvfit_tr <- cv.glmnet(data.matrix(x_tr),y_tr,family="cox")
+preds <- predict(cvfit_tr,data.matrix(x_te),s="lambda.min")
+levs <- cut_number(preds,3)
+fit <- survfit(y_te~levs)
+out <- survdiff(y_te~levs)
+p.val <- 1 - pchisq(out$chisq, length(out$n) - 1)
+#print(paste0("p-val: ", p.val))
+mydata <- data.frame(as.matrix(y_te),preds)
+out <- Est.Cval(mydata, 3000, nofit=TRUE)
+cind <- out$Dhat
+#print(paste0("C-index: ", cind))
+times <- seq(10, 3000, 10)                  
+AUC_Uno <- AUC.uno(y_tr, y_te, preds, times)
+auc_uno <- AUC_Uno$iauc
+```
+
+
+```{r}
+fit <- survfit(y_te~levs)
+out <- survdiff(y_te~levs)
+out
+```
+
+
+```{r}
+data$risk <- "NA"
+levs <- cut_number(preds,3)
+levs <- as.character(as.numeric(levs))
+data$risk[xi] <- as.character(fct_relevel(fct_recode(levs, Low = "1", Moderate = "2", High = "3"), "High", "Moderate", "Low") )
+data$risk  <-  factor(data$risk, levels=c("High", "Moderate", "Low"))
+table(data$risk[xi],  ifelse(data$status[xi]==1, "Deceased", "Alive") ) %>% knitr::kable(., row.names=T)
+```
+
+
+```{r}
+p.val <- 1 - pchisq(out$chisq, length(out$n) - 1)
+p.val #  0.03844712
+```
+
+
+
+```{r}
+library(ggplot2)
+library(ggfortify)
+autoplot(fit,xlab="Survival Time (days)",ylab="Survival",
+         main=paste0("p-value: ",round(p.val,6)))
+```
+
+
+# UMAP 
+
+```{r}
+plot.umap <- function(x, labels, sign, pval, auc_uno,
+                      main=paste0("A UMAP visualization of the TCGA dataset ", sign, " / ", signif(pval, digits = 3), " / ", round(auc_uno, digits = 2)),
+                      colors=c("#ff7f00", "#e377c2", "#17becf"),
+                      pad=0.1, cex=0.6, pch=19, add=FALSE, legend.suffix="",
+                      cex.main=1, cex.legend=0.85) {
+  layout = x
+  if (is(x, "umap")) {
+    layout = x$layout
+  }
+  xylim = range(layout)
+  xylim = xylim + ((xylim[2]-xylim[1])*pad)*c(-0.5, 0.5)
+  if (!add) {
+    par(mar=c(0.2,0.7,1.2,0.7), ps=10)
+    plot(xylim, xylim, type="n", axes=F, frame=F)
+    rect(xylim[1], xylim[1], xylim[2], xylim[2], border="#aaaaaa", lwd=0.25)
+  }
+  points(layout[,1], layout[,2], col=colors[as.integer(labels)],
+         cex=cex, pch=pch)
+  mtext(side=3, main, cex=cex.main)
+  labels.u = unique(labels)
+  legend.pos = "topleft"
+  legend.text = as.character(labels.u)
+  if (add) {
+    legend.pos = "bottomleft"
+    legend.text = paste(as.character(labels.u), legend.suffix)
+  }
+  legend(legend.pos, legend=legend.text, inset=0.03,
+         col=colors[as.integer(labels.u)],
+         bty="n", pch=pch, cex=cex.legend)
+}
+```
+
+
+```{r}
+if(!require(umap)){install.packages("umap")}
+#ix <- c(1:nrow(data))[data$dataset == "TCGA"]
+for(sign in gsign_lusc$id) {
+  print(sign)
+  col_sign <- intersect(gsign_lusc[sign, "signature"][[1]], names(data))  
+  set.seed(1)
+  xi <- sample(1:nrow(data),size=floor(nrow(data)/2))
+  x <- (data[, col_sign] +1)
+  y <- Surv(data$obs.time, data$status)
+  y_tr <- y[-xi]
+  x_tr <- x[-xi,]
+  y_te <- y[xi]
+  x_te <- x[xi,]
+  cvfit_tr <- cv.glmnet(data.matrix(x_tr),y_tr,family="cox")
+  preds <- predict(cvfit_tr,data.matrix(x_te),s="lambda.min")
+  levs <- cut_number(preds,3)
+  levs <- as.character(as.numeric(levs))
+  data$risk[xi] <- as.character(fct_relevel(fct_recode(levs, Low = "1", Moderate = "2", High = "3"), "High", "Moderate", "Low") )
+  data$risk  <-  factor(data$risk, levels=c("High", "Moderate", "Low"))
+  fit <- survfit(y_te~levs)
+  out <- survdiff(y_te~levs)
+  p.val <- 1 - pchisq(out$chisq, length(out$n) - 1)
+  times <- seq(10, 3000, 10)                  
+  AUC_Uno <- AUC.uno(y_tr, y_te, preds, times)
+  auc_uno <- AUC_Uno$iauc
+  icgc.umap = umap(data[xi, col_sign])
+  plot.umap(icgc.umap, data$risk , sign, p.val, auc_uno)
+}
+```
+
+```{r}
+if(!require("FactoMineR")){install.packages("FactoMineR")}
+if(!require('factoextra')){install.packages('factoextra')} # Extract and Visualize the Results of Multivariate Data Analyses. PCA. CA. MCA.
+if(!require('corrplot')){install.packages('corrplot')} # A graphical display of a correlation matrix or general matrix
+set.seed(1)
+exp <- (data[ xi , col_mRMR]+1)
+tcga.pca <- PCA(scale(exp), graph = FALSE, scale.unit = TRUE)
+fviz_screeplot(tcga.pca, addlabels = TRUE)
+var <- get_pca_var(tcga.pca)
+#corrplot(head(tcga.pca$var$cos2, 10), is.corr=FALSE, method="pie")
+fviz_cos2(tcga.pca, choice = "var", axes = 1:2, top = 20)#
+fviz_pca_var(tcga.pca, col.var = "cos2" , select.var=list(cos2=8) , repel= T )#
+fviz_pca_ind(tcga.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = data$risk[xi], # color by groups
+             palette = c("red3", "orange1", "green4"),
+             addEllipses = T, # Concentration ellipses
+             legend.title = "Risk"
+)
+tcga.km <- kmeans(tcga.pca$ind$coord, centers = 3, nstart = 20)
+grp <- as.factor(tcga.km$cluster)
+fviz_pca_ind(tcga.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = grp, # color by groups
+             palette = c("red3", "orange1", "green4"),
+             addEllipses = T, # Concentration ellipses
+             legend.title = "Risk"
+)
+```
+
+
+# PCA - TCGA
+
+```{r,  fig.width=10, fig.height=6}
+set.seed(1)
+exp <- (data[ xi , col_mRMR]+1)
+PCA_raw <- prcomp((exp), scale. = FALSE)
+percentVar <- round(100*PCA_raw$sdev^2/sum(PCA_raw$sdev^2),1)
+sd_ratio <- sqrt(percentVar[2] / percentVar[1])
+dataGG <- data.frame(PC1 = PCA_raw$x[,1], PC2 = PCA_raw$x[,2],
+                     status = ifelse(data$status[xi]==1, "Deceased", "Alive"),
+                     risk = data$risk[xi],
+                     metastasis =  data$metastasis[xi])
+ggplot(dataGG, aes(x=PC1, y=PC2, shape = status, color = risk)) +
+  geom_point() +
+  geom_rug() +
+  ggtitle("PCA on expression data of mRMR signature") +
+  xlab(paste0("PC1, VarExp: ", percentVar[1], "%")) +
+  ylab(paste0("PC2, VarExp: ", percentVar[2], "%")) +
+  theme(plot.title = element_text(hjust = 0.5))+
+  #coord_fixed(ratio = 1) +
+  scale_shape_manual(values = c(15,4)) + 
+  scale_color_manual(values = c("red3", "orange1", "green4")) + theme(aspect.ratio = 1) +
+  ggsave("../plots/pca_mRMR_TCGA.pdf", width = 14, height = 9, units = c("in"))
+fviz_pca_ind(PCA_raw,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = data$risk[xi], # color by groups
+             palette = c("red3", "orange1", "green4"),
+             addEllipses = T, # Concentration ellipses
+             legend.title = "Risk"
+)
+```
+
+
+# PCA plot using Generalized PCA - TCGA
+https://bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html#pca-plot-using-generalized-pca
+
+```{r}
+library("glmpca")
+set.seed(12)
+xi <- sample(1:nrow(data),size=floor(nrow(data)/2))
+x <- (data[, col_mRMR] +1)
+y <- Surv(data$obs.time, data$status)
+y_tr <- y[-xi]
+x_tr <- x[-xi,]
+y_te <- y[xi]
+x_te <- x[xi,]
+set.seed(12)
+cvfit_tr <- cv.glmnet(data.matrix(x_tr),y_tr,family="cox")
+preds <- predict(cvfit_tr,data.matrix(x_te),s="lambda.min")
+levs <- cut_number(preds,3)
+levs <- as.character(as.numeric(levs))
+data$risk[xi] <- as.character(fct_relevel(fct_recode(levs, Low = "1", Moderate = "2", High = "3"), "High", "Moderate", "Low") )
+data$risk  <-  factor(data$risk, levels=c("High", "Moderate", "Low"))
+
+df <- as.data.frame(t(data[xi, col_mRMR]))
+df <- df[apply(df[,-1], 1, function(x) !all(x==0)),]
+df <- (df+1)
+#  Negative binomial with global overdispersion ----
+set.seed(12)
+gpca <- glmpca(df, L=2, fam="poi")
+gpca.dat <- gpca$factors
+gpca.dat$risk <- data$risk[xi]
+gpca.dat$status <- ifelse(data$status[xi]==1, "Deceased", "Alive")
+ggplot(gpca.dat, aes(x=dim1, y=dim2, shape = status, color = risk)) +
+  geom_point() +
+  geom_rug() +
+  ggtitle("Generalized PCA plot of ICGC data expression with mRMR genes") +
+  xlab("PC1") +
+  ylab("PC2") +
+  #xlab(paste0("PC1, VarExp: ", gpca[1], "%")) +
+  #ylab(paste0("PC2, VarExp: ", gpca[2], "%")) +
+  theme(plot.title = element_text(hjust = 0.5))+
+  #coord_fixed(ratio = sd_ratio) +
+  scale_shape_manual(values = c(15,4)) + 
+  scale_color_manual(values = c("red3", "orange1", "green4")) + theme(aspect.ratio = 1) +
+  ggsave("../plots/gpca_tcga_mRMR0.pdf", width = 11, height = 7, units = c("in"))
+```
