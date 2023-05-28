@@ -63,7 +63,7 @@ knitr::kable(t1, align=c("l", "l", "r", "r", "r"))
 library(survC1)
 library(survAUC)
 
-for(sign in gsign.lusc$id[c(1:8)]) {
+for(sign in gsign.lusc$id[c(1:6)]) {
   print(sign)
   col_sign <- intersect(gsign_lusc[sign, "signature"][[1]], names(data))
   
