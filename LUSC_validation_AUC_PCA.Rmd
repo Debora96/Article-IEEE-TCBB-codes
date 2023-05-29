@@ -16,16 +16,17 @@ package.check <- lapply(packages_cran, FUN = function(x) {
     library(x, character.only = TRUE)
   }
 })
-library(stats) # MDS
-library("glmpca")
-library(ggplot2)
-library(ggfortify)
-library(survC1)
-library(survAUC)
-library(glmnet)
-library(gbm)
-library(mboost)
-library(finalfit)
+library(dplyr)  # install.packages("dplyr")
+library(stats) # install.packages("stats")
+library(glmpca) # install.packages("glmpca")
+library(ggplot2) # install.packages("ggplot2")
+library(ggfortify) #  install.packages('ggfortify')
+library(survC1) # install.packages("survC1")
+library(survAUC) # install.packages("survAUC")
+library(glmnet) # install.packages("glmnet")
+#library(gbm) # install.packages("gbm")
+#library(mboost)   # install.packages("mboost")
+library(finalfit)  # install.packages("finalfit")
 rm(packages_cran, package.check)
 ```
 
@@ -33,17 +34,18 @@ rm(packages_cran, package.check)
 # Load Processed data
 
 ```{r}
-load("../data/1.data.processed.rda")
+load("1.data.processed.rda")
+load("2.gsign_lusc.rda")
 
-library(dplyr)
+
 
 #remove rows with NA value in any column
-   lusc.data<-lusc.data %>%
+data <-lusc.data %>%
      na.omit()
-  data<-lusc.data
+   #data<-lusc.data
 library(finalfit)
 # Crosstable 
-explanatory = c("obs.time", "age", "gender", "neoplasm", "metastasis", "ajcc.stage")
+explanatory = c("obs.time", "age", "gender", "neoplasm", "metastasis", "ajcc.stage", "prior.dx")
 dependent = 'status'
 data %>%
 #  mutate(status = case_when(status==1 ~ "Deceased",
@@ -65,7 +67,7 @@ library(survAUC)
 
 for(sign in gsign.lusc$id[c(1:6)]) {
   print(sign)
-  col_sign <- intersect(gsign_lusc[sign, "signature"][[1]], names(data))
+  col_sign <- intersect(gsign.lusc[sign, "signature"][[1]], names(data))
   
   #set.seed(1) ## for reproducibility
   
@@ -123,13 +125,17 @@ for(sign in gsign.lusc$id[c(1:6)]) {
 library(survC1)
 library(survAUC)
 bmk <- setNames(data.frame(matrix(nrow=0, ncol=6)), c("sign", "iteration", "fold", "p.val", "cind", "auc_uno"))
-for(sign in gsign_lusc$id[c(1:8)]) {
-  #print(sign)
-  col_sign <- intersect(gsign_lusc[sign, "signature"][[1]], names(data))
+#for(sign in gsign.lusc$id[c(1, )){
+for(sign in c("fs.mRMR", "filt.gbm")){
+  
+  print(paste0(">>>>>>>>>>> ", sign))
+  
+  col_sign <- intersect(gsign.lusc[sign, "signature"][[1]], names(data))
   
   for(i in c(1:10)){
+    try({
     #set.seed(1) ## for reproducibility
-    fold1 <- sample(1:nrow(data),size=floor(nrow(data)/3))
+    fold1 <- sample(1:nrow(data), size=floor(nrow(data)/3))
     fold2 <- sample(setdiff(1:nrow(data), fold1), size=floor(nrow(data)/3))
     fold3 <- setdiff(1:nrow(data), union(fold1,fold2))
     
@@ -152,23 +158,24 @@ for(sign in gsign_lusc$id[c(1:8)]) {
       fit <- survfit(y_te~levs)
       out <- survdiff(y_te~levs)
       p.val <- 1 - pchisq(out$chisq, length(out$n) - 1)
-      #print(paste0("p-val: ", p.val))
+      print(paste0("p-val: ", p.val))
       
       
       mydata <- data.frame(as.matrix(y_te),preds)
       out <- Est.Cval(mydata, 3000, nofit=TRUE)
       cind <- out$Dhat
-      #print(paste0("C-index: ", cind))
+      print(paste0("C-index: ", cind))
       
       times <- seq(10, 3000, 10)                  
       AUC_Uno <- AUC.uno(y_tr, y_te, preds, times)
       auc_uno <- AUC_Uno$iauc
-      #print(paste0("AUC_Uno: ", auc_uno)) 
+      print(paste0("AUC_Uno: ", auc_uno)) 
       df <- setNames(data.frame(sign, i, f, p.val, cind, auc_uno), c("sign", "iteration", "fold", "p.val", "cind", "auc_uno"))
       
       bmk <- rbind(bmk,  df)
       f <- f+1
     }
+  }, silent = T)
   }
 } 
 bmk %>% group_by(sign) %>% 
@@ -185,7 +192,11 @@ bmk %>% group_by(sign) %>%
 # PCA - TCGA
 
 ```{r}
-set.seed(1)
+#set.seed(1)
+col_sign <- intersect(gsign.lusc["fs.mRMR", "signature"][[1]], names(data))
+col_sign <- intersect(gsign.lusc["fs.mRMR", "signature"][[1]], names(data))
+
+try({
 xi <- sample(1:nrow(data),size=floor(nrow(data)/2))
 x <- (data[, col_sign] +1)
 y <- Surv(data$obs.time, data$status)
@@ -207,6 +218,7 @@ cind <- out$Dhat
 times <- seq(10, 3000, 10)                  
 AUC_Uno <- AUC.uno(y_tr, y_te, preds, times)
 auc_uno <- AUC_Uno$iauc
+  }, silent = T)
 ```
 
 
@@ -221,7 +233,7 @@ out
 data$risk <- "NA"
 levs <- cut_number(preds,3)
 levs <- as.character(as.numeric(levs))
-data$risk[xi] <- as.character(fct_relevel(fct_recode(levs, Low = "1", Moderate = "2", High = "3"), "High", "Moderate", "Low") )
+data$risk[xi] <- as.character(forcats::fct_relevel(forcats::fct_recode(levs, Low = "1", Moderate = "2", High = "3"), "High", "Moderate", "Low") )
 data$risk  <-  factor(data$risk, levels=c("High", "Moderate", "Low"))
 table(data$risk[xi],  ifelse(data$status[xi]==1, "Deceased", "Alive") ) %>% knitr::kable(., row.names=T)
 ```
@@ -281,9 +293,9 @@ plot.umap <- function(x, labels, sign, pval, auc_uno,
 ```{r}
 if(!require(umap)){install.packages("umap")}
 #ix <- c(1:nrow(data))[data$dataset == "TCGA"]
-for(sign in gsign_lusc$id) {
+for(sign in gsign.lusc$id) {
   print(sign)
-  col_sign <- intersect(gsign_lusc[sign, "signature"][[1]], names(data))  
+  col_sign <- intersect(gsign.lusc[sign, "signature"][[1]], names(data))  
   set.seed(1)
   xi <- sample(1:nrow(data),size=floor(nrow(data)/2))
   x <- (data[, col_sign] +1)
