@@ -1,0 +1,159 @@
+options(repos='http://cran.rstudio.org')
+have.packages <- installed.packages()
+cran.packages <- c('devtools','plotrix','randomForest','tree')
+to.install <- setdiff(cran.packages, have.packages[,1])
+if(length(to.install)>0) install.packages(to.install)
+
+library(devtools)
+if(!('reprtree' %in% installed.packages())){
+  install_github('munoztd0/reprtree')
+}
+for(p in c(cran.packages, 'reprtree')) eval(substitute(library(pkg), list(pkg=p)))
+
+
+library(keras)
+library(tfdatasets)
+library(readr)
+library(tidyverse)
+library(rsample)
+library(tensorflow)
+library(randomForest)
+require(caTools)
+
+data<- df0c3
+
+fold1 <- sample(1:nrow(data),size=floor(nrow(data)/3))
+fold2 <- sample(setdiff(1:nrow(data), fold1), size=floor(nrow(data)/3))
+fold3 <- setdiff(1:nrow(data), union(fold1,fold2))
+
+x <- (data[, col_sign3] +1)
+x$status <- c(data$status)
+
+#x$gender <- c(data$gender)
+
+x$status <- as.factor(x$status)
+#x$stage <- c(data$ajcc.stage)
+#x$stage <- as.factor(x$stage)
+
+
+#x <- x %>%
+  mutate(stage = fct_collapse(status, 
+                              others = c('T3', 'T4')))
+x_tr <- x[-fold1,]
+x_te <- x[fold1,]
+
+dim(x_tr)
+dim(x_te)
+
+sapply(x_tr, class)
+
+rf <- randomForest(status ~ ., data= x_tr,
+                   ntree=1000,
+                   importance=TRUE,
+                   localImp = TRUE)
+
+pred = predict(rf, newdata=x_te)
+
+rf
+
+
+plot_min_depth_distribution(min_depth_frame)
+
+plot_min_depth_distribution(min_depth_frame, mean_sample = "relevant_trees", k = 15)
+
+importance_frame <- measure_importance(rf)
+save(importance_frame, file = "importance_frame.rda")
+load("importance_frame.rda")
+importance_frame
+
+plot_multi_way_importance(importance_frame, size_measure = "no_of_nodes")
+plot_importance_ggpairs(importance_frame)
+(vars <- important_variables(importance_frame, k = 30, measures = c("mean_min_depth", "no_of_trees")))
+
+
+# Random Forest com 30 Features
+x2  <- subset(x, select= c(status,PPFIA4,FTCD,PLXNB3,CACNA1I,LIPK,C14orf39,GCLC,RCOR2,TLX3
+                           ,RAD51AP2,IL6,NALF2,PLAAT1,SSX1,MAGEA3,CENPI,GINS2,PDE10A,
+                           NUS1P2,CHIAP2,CCNP,MYOSLID,C7,COL9A3,SP8,KLK9,VCAN,AGER,
+                           LINC02598,SPRR2G )) 
+
+
+#x2$status <- as.factor(x$status)
+#x2$stage <- as.factor(x$stage)
+x2_tr <- x2[-fold1,]
+x2_te <- x2[fold1,]
+
+sapply(x2_tr, class)
+
+
+# Esse foi o que teve melhor resultado
+rf2 <- randomForest(
+  status ~ .,
+  data=x2_tr,
+  ntree=1000,
+  importance=TRUE,
+  localImp = TRUE,
+  
+)
+
+rf2
+
+
+varImpPlot(rf2)
+
+
+plot_min_depth_distribution(min_depth_frame)
+
+plot_min_depth_distribution(min_depth_frame, mean_sample = "relevant_trees", k = 15)
+
+importance_frame <- measure_importance(rf2)
+save(importance_frame, file = "importance_frame.rda")
+load("importance_frame.rda")
+importance_frame
+
+plot_multi_way_importance(importance_frame, size_measure = "no_of_nodes")
+plot_importance_ggpairs(importance_frame)
+(vars <- important_variables(importance_frame, k = 30, measures = c("mean_min_depth", "no_of_trees")))
+
+
+#TESTE com Loop 
+
+
+set.seed(123)
+
+dataTESTE <- x2
+target <- status
+
+num_samples <- nrow(dataTESTE)
+num_features <- ncol(dataTESTE)
+# Número de repetições (100 vezes)
+num_repetitions <- 100
+
+# Vetor para armazenar as acurácias
+accuracies <- numeric(num_repetitions)
+
+# Loop para executar o Random Forest e calcular a acurácia em cada repetição
+for (i in 1:num_repetitions) {
+  # Dividir os dados em treinamento e teste (usando 80% treinamento e 20% teste)
+  train_indices <- sample(1:num_samples, num_samples * 0.8)
+  test_indices <- setdiff(1:num_samples, train_indices)
+  
+  # Treinar o modelo Random Forest
+  rf_model <- randomForest(dataTESTE[train_indices, ], target[train_indices], ntree = 500,  importance=TRUE,
+                           localImp = TRUE)
+  
+  
+  # Fazer previsões no conjunto de teste
+  predictions <- predict(rf_model, dataTESTE[test_indices, ])
+  
+  # Calcular a acurácia
+  accuracy <- sum(predictions == target[test_indices]) / length(test_indices)
+  
+  # Armazenar a acurácia
+  accuracies[i] <- accuracy
+}
+
+
+average_accuracy <- mean(accuracies)
+print(paste("Acurácia Média:", average_accuracy))
+
